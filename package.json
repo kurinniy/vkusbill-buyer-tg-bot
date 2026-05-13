@@ -13,6 +13,7 @@
     "format": "biome check --write .",
     "lint": "biome check .",
     "start": "node dist/server.js",
+    "test": "node --import tsx --test src/**/*.test.ts",
     "typecheck": "tsc --noEmit",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
