@@ -2,18 +2,6 @@ export type ImportRowPayload = Record<string, string> & {
   _row_number: string;
 };
 
-export interface ImportCsvRow {
-  dedupeKey: string;
-  finalizedAt: Date;
-  shareBasketUrl: string | null;
-  itemName: string;
-  quantity: number;
-  itemXmlId: number | null;
-  itemPrice: number | null;
-  raw: ImportRowPayload;
-  rowNumber: number;
-}
-
 export interface ImportOrderItem {
   name: string;
   payload: ImportRowPayload;

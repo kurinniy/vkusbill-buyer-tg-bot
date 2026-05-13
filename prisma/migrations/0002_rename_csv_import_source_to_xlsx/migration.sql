@@ -1,0 +1,9 @@
+ALTER TABLE `HistoricalOrder`
+  MODIFY COLUMN `source` ENUM('TELEGRAM', 'CSV_IMPORT', 'XLSX_IMPORT') NOT NULL;
+
+UPDATE `HistoricalOrder`
+SET `source` = 'XLSX_IMPORT'
+WHERE `source` = 'CSV_IMPORT';
+
+ALTER TABLE `HistoricalOrder`
+  MODIFY COLUMN `source` ENUM('TELEGRAM', 'XLSX_IMPORT') NOT NULL;

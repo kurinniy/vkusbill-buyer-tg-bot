@@ -3,18 +3,53 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { PrismaImportStore } from '../db/repositories/index.js';
-import { ImportService } from '../domain/imports/index.js';
+import { ImportService, parseImportXlsx } from '../domain/imports/index.js';
+import type { ImportStore } from '../domain/imports/store.js';
+
+class NoopImportStore implements ImportStore {
+  public async findExistingDedupeKeys(): Promise<Set<string>> {
+    return new Set();
+  }
+
+  public async persistExecutedImport(): Promise<void> {
+    throw new Error('DATABASE_URL is required for executed imports.');
+  }
+}
+
+function createImportStore(options: {
+  execute: boolean;
+  failOnRowError: boolean;
+  skipDuplicates: boolean;
+}): ImportStore {
+  const { DATABASE_URL: databaseUrl = '' } = process.env;
+  const hasDatabaseUrl = databaseUrl.trim().length > 0;
+
+  if (options.execute) {
+    if (!hasDatabaseUrl) {
+      throw new Error('DATABASE_URL is required for --execute.');
+    }
+
+    return new PrismaImportStore();
+  }
+
+  if (hasDatabaseUrl) {
+    return new PrismaImportStore();
+  }
+
+  return new NoopImportStore();
+}
 
 const args = process.argv.slice(2);
 const { filePath, options } = parseArgs(args);
 const absolutePath = path.resolve(filePath);
-const fileContent = await readFile(absolutePath, 'utf8');
+const fileContent = await readFile(absolutePath);
 const checksum = createHash('sha256').update(fileContent).digest('hex');
+const rows = parseImportXlsx(fileContent);
 
-const service = new ImportService(new PrismaImportStore());
-const result = await service.importCsv({
+const service = new ImportService(createImportStore(options));
+const result = await service.importXlsx({
   checksum,
-  text: fileContent,
+  rows,
   options: {
     ...options,
     sourceFile: absolutePath,
@@ -78,7 +113,7 @@ function parseArgs(args: string[]): {
 
   if (filePath == null) {
     throw new Error(
-      'Usage: npm run import:csv -- [--dry-run|--execute] [--skip-duplicates] [--fail-on-row-error] <path-to-csv>',
+      'Usage: npm run import:xlsx -- [--dry-run|--execute] [--skip-duplicates] [--fail-on-row-error] <path-to-xlsx>',
     );
   }
 

@@ -15,4 +15,4 @@ Application layers:
 - `src/domain` for business rules
 - `src/integrations` for external systems such as VkusVill MCP
 - `src/telegram` for Telegram bot/webhook handlers
-- `src/cli` for CSV import and operational scripts
+- `src/cli` for XLSX import and operational scripts

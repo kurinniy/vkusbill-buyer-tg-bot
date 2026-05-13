@@ -5,7 +5,7 @@ export interface HistoricalOrderItemView {
 
 export interface HistoricalOrderView {
   id: string;
-  source: 'TELEGRAM' | 'CSV_IMPORT';
+  source: 'TELEGRAM' | 'XLSX_IMPORT';
   shareBasketUrl: string | null;
   itemCount: number;
   finalizedAt: Date | null;

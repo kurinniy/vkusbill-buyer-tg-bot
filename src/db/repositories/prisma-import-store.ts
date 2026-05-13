@@ -74,7 +74,7 @@ export class PrismaImportStore implements ImportStore {
       for (const order of params.orders) {
         const historicalOrder = await tx.historicalOrder.create({
           data: {
-            source: HistoricalOrderSource.CSV_IMPORT,
+            source: HistoricalOrderSource.XLSX_IMPORT,
             dedupeKey: order.dedupeKey,
             importJobId: importJob.id,
             shareBasketUrl: order.shareBasketUrl,
