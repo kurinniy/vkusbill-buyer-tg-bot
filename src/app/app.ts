@@ -11,13 +11,20 @@ export function buildApp(dependencies: AppDependencies = createAppDependencies()
       level: env.LOG_LEVEL,
     },
     disableRequestLogging: env.NODE_ENV === 'test',
+    requestIdHeader: 'x-request-id',
+  });
+
+  app.addHook('onRequest', (request, reply, done) => {
+    reply.header('x-correlation-id', request.id);
+    done();
   });
 
   app.setErrorHandler((error, request, reply) => {
-    request.log.error({ err: error }, 'Unhandled application error');
+    request.log.error({ err: error, correlationId: request.id }, 'Unhandled application error');
 
     void reply.status(500).send({
       error: 'Internal Server Error',
+      correlationId: request.id,
     });
   });
 
