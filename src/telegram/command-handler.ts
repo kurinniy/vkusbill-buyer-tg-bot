@@ -11,7 +11,7 @@ import type { TelegramMessage, TelegramUpdate } from './types.js';
 
 type SupportedOrderService = Pick<
   OrderService,
-  'addItem' | 'cancel' | 'createDraftOrder' | 'finalize' | 'getActiveOrder'
+  'addItem' | 'cancel' | 'createDraftOrder' | 'finalize' | 'getActiveOrder' | 'removeItem'
 >;
 
 export interface ProductSearchService {
@@ -68,6 +68,9 @@ export class TelegramCommandHandler {
         return;
       case '/add':
         await this.handleAdd(message, command.args);
+        return;
+      case '/remove':
+        await this.handleRemove(message, command.args);
         return;
       default:
         return;
@@ -271,11 +274,63 @@ export class TelegramCommandHandler {
       `Добавил в корзину: ${selectedItem.name} x ${quantity}.`,
     );
   }
+
+  private async handleRemove(message: TelegramMessage, args: string): Promise<void> {
+    const itemIndex = Number(args.trim());
+
+    if (!Number.isInteger(itemIndex) || itemIndex <= 0) {
+      await this.telegramClient.sendMessage(
+        message.chat.id,
+        'Использование: /remove <номер позиции из /cart>',
+      );
+      return;
+    }
+
+    const activeOrder = await this.orderService.getActiveOrder(message.chat.id);
+
+    if (activeOrder == null) {
+      await this.telegramClient.sendMessage(
+        message.chat.id,
+        'Активной корзины нет. Создайте её командой /new_order.',
+      );
+      return;
+    }
+
+    const selectedItem = activeOrder.items[itemIndex - 1];
+
+    if (selectedItem == null) {
+      await this.telegramClient.sendMessage(
+        message.chat.id,
+        'В корзине нет позиции с таким номером.',
+      );
+      return;
+    }
+
+    const actor = toActor(message);
+
+    await this.orderService.removeItem(
+      actor == null
+        ? {
+            telegramChatId: message.chat.id,
+            itemId: selectedItem.id,
+          }
+        : {
+            telegramChatId: message.chat.id,
+            itemId: selectedItem.id,
+            actor,
+          },
+    );
+
+    await this.telegramClient.sendMessage(
+      message.chat.id,
+      `Удалил из корзины: ${selectedItem.productSnapshot.name}.`,
+    );
+  }
 }
 
 function parseTelegramCommand(text: string): {
   args: string;
-  name: '/add' | '/cancel' | '/cart' | '/finalize' | '/new_order' | '/search';
+  name: '/add' | '/cancel' | '/cart' | '/finalize' | '/new_order' | '/remove' | '/search';
 } | null {
   const match = text.trim().match(/^\/([a-z_]+)(?:@[a-z0-9_]+)?(?:\s+(.*))?$/i);
 
@@ -292,7 +347,8 @@ function parseTelegramCommand(text: string): {
     command === '/cancel' ||
     command === '/finalize' ||
     command === '/search' ||
-    command === '/add'
+    command === '/add' ||
+    command === '/remove'
   ) {
     return {
       name: command,

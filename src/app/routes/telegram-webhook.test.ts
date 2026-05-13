@@ -415,6 +415,113 @@ test('POST /telegram/webhook prevents /finalize for empty cart', async () => {
   await app.close();
 });
 
+test('POST /telegram/webhook handles /remove using cart item number', async () => {
+  const { app, telegramClient } = await buildTestApp();
+
+  await app.inject({
+    method: 'POST',
+    url: '/telegram/webhook',
+    headers: {
+      'x-telegram-bot-api-secret-token': 'test-secret',
+    },
+    payload: {
+      update_id: 14,
+      message: {
+        message_id: 14,
+        text: '/search бананы',
+        chat: {
+          id: 101,
+          type: 'group',
+          title: 'Test Group',
+        },
+        from: {
+          id: 77,
+          username: 'tester',
+          first_name: 'Test',
+        },
+      },
+    },
+  });
+
+  await app.inject({
+    method: 'POST',
+    url: '/telegram/webhook',
+    headers: {
+      'x-telegram-bot-api-secret-token': 'test-secret',
+    },
+    payload: {
+      update_id: 15,
+      message: {
+        message_id: 15,
+        text: '/add 1 2',
+        chat: {
+          id: 101,
+          type: 'group',
+          title: 'Test Group',
+        },
+        from: {
+          id: 77,
+          username: 'tester',
+          first_name: 'Test',
+        },
+      },
+    },
+  });
+
+  const removeResponse = await app.inject({
+    method: 'POST',
+    url: '/telegram/webhook',
+    headers: {
+      'x-telegram-bot-api-secret-token': 'test-secret',
+    },
+    payload: {
+      update_id: 16,
+      message: {
+        message_id: 16,
+        text: '/remove 1',
+        chat: {
+          id: 101,
+          type: 'group',
+          title: 'Test Group',
+        },
+        from: {
+          id: 77,
+          username: 'tester',
+          first_name: 'Test',
+        },
+      },
+    },
+  });
+
+  assert.equal(removeResponse.statusCode, 200);
+  assert.equal(telegramClient.messages[2]?.text, 'Удалил из корзины: Бананы.');
+
+  const cartResponse = await app.inject({
+    method: 'POST',
+    url: '/telegram/webhook',
+    headers: {
+      'x-telegram-bot-api-secret-token': 'test-secret',
+    },
+    payload: {
+      update_id: 17,
+      message: {
+        message_id: 17,
+        text: '/cart',
+        chat: {
+          id: 101,
+          type: 'group',
+          title: 'Test Group',
+        },
+      },
+    },
+  });
+
+  assert.equal(cartResponse.statusCode, 200);
+  assert.equal(telegramClient.messages[3]?.text, 'Корзина пуста.');
+
+  await app.close();
+});
+
 test('POST /telegram/webhook rejects wrong secret', async () => {
   const { app, telegramClient } = await buildTestApp();
 
