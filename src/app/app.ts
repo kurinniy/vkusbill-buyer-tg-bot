@@ -1,9 +1,11 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 
 import { env } from '../config/env.js';
+import { type AppDependencies, createAppDependencies } from './dependencies.js';
 import { registerHealthRoute } from './routes/health.js';
+import { registerTelegramWebhookRoute } from './routes/telegram-webhook.js';
 
-export function buildApp(): FastifyInstance {
+export function buildApp(dependencies: AppDependencies = createAppDependencies()): FastifyInstance {
   const app = Fastify({
     logger: {
       level: env.LOG_LEVEL,
@@ -20,6 +22,7 @@ export function buildApp(): FastifyInstance {
   });
 
   void app.register(registerHealthRoute);
+  void app.register(registerTelegramWebhookRoute, dependencies);
 
   return app;
 }

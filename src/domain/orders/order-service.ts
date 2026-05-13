@@ -22,8 +22,8 @@ export class OrderService {
     private readonly vkusvillClient: Pick<VkusvillMcpClient, 'createCartLink'>,
   ) {}
 
-  public async createDraftOrder(chat: TelegramChatRef): Promise<OrderView> {
-    return this.orderStore.createDraftOrder(chat);
+  public async createDraftOrder(chat: TelegramChatRef, actor?: OrderActor): Promise<OrderView> {
+    return this.orderStore.createDraftOrder(chat, actor);
   }
 
   public async getActiveOrder(telegramChatId: number): Promise<OrderView | null> {
