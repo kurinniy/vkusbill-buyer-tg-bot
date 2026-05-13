@@ -1,10 +1,18 @@
-import { type OrderService, productSnapshotFromSearchResult } from '../domain/orders/index.js';
+import {
+  ActiveOrderNotFoundError,
+  EmptyOrderFinalizeError,
+  type OrderService,
+  productSnapshotFromSearchResult,
+} from '../domain/orders/index.js';
 import type { OrderActor, OrderView, TelegramChatRef } from '../domain/orders/index.js';
 import type { ProductSearchResultItem } from '../integrations/vkusvill-mcp/index.js';
 import type { TelegramClient } from './telegram-client.js';
 import type { TelegramMessage, TelegramUpdate } from './types.js';
 
-type SupportedOrderService = Pick<OrderService, 'addItem' | 'createDraftOrder' | 'getActiveOrder'>;
+type SupportedOrderService = Pick<
+  OrderService,
+  'addItem' | 'cancel' | 'createDraftOrder' | 'finalize' | 'getActiveOrder'
+>;
 
 export interface ProductSearchService {
   searchProducts(params: { query: string }): Promise<{
@@ -49,6 +57,12 @@ export class TelegramCommandHandler {
       case '/cart':
         await this.handleCart(message);
         return;
+      case '/cancel':
+        await this.handleCancel(message);
+        return;
+      case '/finalize':
+        await this.handleFinalize(message);
+        return;
       case '/search':
         await this.handleSearch(message, command.args);
         return;
@@ -91,6 +105,71 @@ export class TelegramCommandHandler {
     }
 
     await this.telegramClient.sendMessage(message.chat.id, formatCart(order));
+  }
+
+  private async handleCancel(message: TelegramMessage): Promise<void> {
+    const actor = toActor(message);
+
+    try {
+      await this.orderService.cancel(
+        actor == null
+          ? { telegramChatId: message.chat.id }
+          : { telegramChatId: message.chat.id, actor },
+      );
+    } catch (error) {
+      if (error instanceof ActiveOrderNotFoundError) {
+        await this.telegramClient.sendMessage(
+          message.chat.id,
+          'Активной корзины нет. Создайте её командой /new_order.',
+        );
+        return;
+      }
+
+      throw error;
+    }
+
+    this.lastSearchResultsByChat.delete(message.chat.id);
+    await this.telegramClient.sendMessage(message.chat.id, 'Корзина отменена.');
+  }
+
+  private async handleFinalize(message: TelegramMessage): Promise<void> {
+    let finalizedOrder: OrderView;
+    const actor = toActor(message);
+
+    try {
+      finalizedOrder = await this.orderService.finalize(
+        actor == null
+          ? { telegramChatId: message.chat.id }
+          : { telegramChatId: message.chat.id, actor },
+      );
+    } catch (error) {
+      if (error instanceof ActiveOrderNotFoundError) {
+        await this.telegramClient.sendMessage(
+          message.chat.id,
+          'Активной корзины нет. Создайте её командой /new_order.',
+        );
+        return;
+      }
+
+      if (error instanceof EmptyOrderFinalizeError) {
+        await this.telegramClient.sendMessage(
+          message.chat.id,
+          'Нельзя финализировать пустую корзину. Добавьте товары через /search и /add.',
+        );
+        return;
+      }
+
+      throw error;
+    }
+
+    this.lastSearchResultsByChat.delete(message.chat.id);
+
+    await this.telegramClient.sendMessage(
+      message.chat.id,
+      finalizedOrder.shareBasketUrl == null
+        ? 'Корзина финализирована, но ссылка не была получена.'
+        : `Корзина финализирована.\nСсылка: ${finalizedOrder.shareBasketUrl}`,
+    );
   }
 
   private async handleSearch(message: TelegramMessage, args: string): Promise<void> {
@@ -194,9 +273,10 @@ export class TelegramCommandHandler {
   }
 }
 
-function parseTelegramCommand(
-  text: string,
-): { args: string; name: '/add' | '/cart' | '/new_order' | '/search' } | null {
+function parseTelegramCommand(text: string): {
+  args: string;
+  name: '/add' | '/cancel' | '/cart' | '/finalize' | '/new_order' | '/search';
+} | null {
   const match = text.trim().match(/^\/([a-z_]+)(?:@[a-z0-9_]+)?(?:\s+(.*))?$/i);
 
   if (match == null) {
@@ -209,6 +289,8 @@ function parseTelegramCommand(
   if (
     command === '/new_order' ||
     command === '/cart' ||
+    command === '/cancel' ||
+    command === '/finalize' ||
     command === '/search' ||
     command === '/add'
   ) {
