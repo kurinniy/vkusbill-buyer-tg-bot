@@ -16,7 +16,11 @@ import type {
 } from '../../domain/orders/index.js';
 import type { OrderActor, OrderView, TelegramChatRef } from '../../domain/orders/index.js';
 import type { ProductSearchResultItem } from '../../integrations/vkusvill-mcp/index.js';
-import { type TelegramClient, TelegramCommandHandler } from '../../telegram/index.js';
+import {
+  InMemoryTelegramUpdateDeduplicator,
+  type TelegramClient,
+  TelegramCommandHandler,
+} from '../../telegram/index.js';
 import type { AppDependencies } from '../dependencies.js';
 import { registerTelegramWebhookRoute } from './telegram-webhook.js';
 
@@ -653,6 +657,52 @@ test('POST /telegram/webhook rejects wrong secret', async () => {
   await app.close();
 });
 
+test('POST /telegram/webhook ignores duplicate update ids', async () => {
+  const { app, telegramClient } = await buildTestApp();
+
+  const payload = {
+    update_id: 500,
+    message: {
+      message_id: 1,
+      text: '/new_order',
+      chat: {
+        id: 101,
+        type: 'group' as const,
+        title: 'Test Group',
+      },
+      from: {
+        id: 77,
+        username: 'tester',
+        first_name: 'Test',
+      },
+    },
+  };
+
+  const firstResponse = await app.inject({
+    method: 'POST',
+    url: '/telegram/webhook',
+    headers: {
+      'x-telegram-bot-api-secret-token': 'test-secret',
+    },
+    payload,
+  });
+
+  const secondResponse = await app.inject({
+    method: 'POST',
+    url: '/telegram/webhook',
+    headers: {
+      'x-telegram-bot-api-secret-token': 'test-secret',
+    },
+    payload,
+  });
+
+  assert.equal(firstResponse.statusCode, 200);
+  assert.equal(secondResponse.statusCode, 200);
+  assert.equal(telegramClient.messages.length, 1);
+
+  await app.close();
+});
+
 async function buildTestApp() {
   const app = Fastify({ logger: false });
   const store = new InMemoryOrderStore();
@@ -672,6 +722,7 @@ async function buildTestApp() {
       new FakeProductSearchService(),
       telegramClient,
     ),
+    telegramUpdateDeduplicator: new InMemoryTelegramUpdateDeduplicator(),
     telegramWebhookSecret: 'test-secret',
   };
 

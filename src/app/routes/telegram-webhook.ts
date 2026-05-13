@@ -19,6 +19,12 @@ export async function registerTelegramWebhookRoute(
       });
     }
 
+    if (!dependencies.telegramUpdateDeduplicator.shouldProcess(request.body.update_id)) {
+      return reply.status(200).send({
+        ok: true,
+      });
+    }
+
     await dependencies.telegramCommandHandler.handleUpdate(request.body);
 
     return reply.status(200).send({

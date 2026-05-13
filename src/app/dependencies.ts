@@ -8,6 +8,7 @@ import {
 } from '../integrations/vkusvill-mcp/index.js';
 import {
   DisabledTelegramClient,
+  InMemoryTelegramUpdateDeduplicator,
   TelegramCommandHandler,
   TelegramHttpClient,
 } from '../telegram/index.js';
@@ -26,6 +27,7 @@ class UnconfiguredProductSearchService {
 
 export interface AppDependencies {
   telegramCommandHandler: TelegramCommandHandler;
+  telegramUpdateDeduplicator: InMemoryTelegramUpdateDeduplicator;
   telegramWebhookSecret?: string;
 }
 
@@ -44,6 +46,7 @@ export function createAppDependencies(): AppDependencies {
     env.TELEGRAM_BOT_TOKEN == null
       ? new DisabledTelegramClient()
       : new TelegramHttpClient(env.TELEGRAM_BOT_TOKEN);
+  const telegramUpdateDeduplicator = new InMemoryTelegramUpdateDeduplicator();
   const productSearchService = vkusvillClient ?? new UnconfiguredProductSearchService();
 
   return env.TELEGRAM_WEBHOOK_SECRET == null
@@ -54,6 +57,7 @@ export function createAppDependencies(): AppDependencies {
           productSearchService,
           telegramClient,
         ),
+        telegramUpdateDeduplicator,
       }
     : {
         telegramCommandHandler: new TelegramCommandHandler(
@@ -62,6 +66,7 @@ export function createAppDependencies(): AppDependencies {
           productSearchService,
           telegramClient,
         ),
+        telegramUpdateDeduplicator,
         telegramWebhookSecret: env.TELEGRAM_WEBHOOK_SECRET,
       };
 }
