@@ -1,0 +1,244 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrderStatus {
+  DRAFT
+  FINALIZED
+  CANCELLED
+}
+
+enum HistoricalOrderSource {
+  TELEGRAM
+  CSV_IMPORT
+}
+
+enum ImportJobStatus {
+  CREATED
+  RUNNING
+  COMPLETED
+  PARTIAL_FAILED
+  FAILED
+}
+
+enum ImportJobRowStatus {
+  PENDING
+  IMPORTED
+  SKIPPED
+  FAILED
+}
+
+model User {
+  id              String   @id @default(cuid())
+  telegramUserId  BigInt?  @unique
+  username        String?  @db.VarChar(255)
+  firstName       String?  @db.VarChar(255)
+  lastName        String?  @db.VarChar(255)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  memberships     ChatMember[]
+  finalizedOrders Order[]  @relation("OrderFinalizedByUser")
+  finalizedHistory     HistoricalOrder[] @relation("HistoricalOrderFinalizedByUser")
+  addedOrderItems      OrderItem[] @relation("OrderItemAddedByUser")
+  orderEvents          OrderEvent[]
+}
+
+model TelegramChat {
+  id               String            @id @default(cuid())
+  telegramChatId   BigInt            @unique
+  type             String            @db.VarChar(50)
+  title            String?           @db.VarChar(255)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  members          ChatMember[]
+  orders           Order[]
+  historicalOrders HistoricalOrder[]
+
+  @@index([createdAt])
+}
+
+model ChatMember {
+  id        String       @id @default(cuid())
+  chatId    String
+  userId    String
+  role      String?      @db.VarChar(50)
+  joinedAt  DateTime     @default(now())
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  chat      TelegramChat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([chatId, userId])
+  @@index([createdAt])
+}
+
+model Order {
+  id                String       @id @default(cuid())
+  chatId            String
+  status            OrderStatus  @default(DRAFT)
+  shareBasketUrl    String?      @db.VarChar(2048)
+  version           Int          @default(1)
+  finalizedByUserId String?
+  finalizedAt       DateTime?
+  cancelledAt       DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  chat              TelegramChat @relation(fields: [chatId], references: [id], onDelete: Restrict)
+  finalizedByUser   User?        @relation("OrderFinalizedByUser", fields: [finalizedByUserId], references: [id], onDelete: SetNull)
+  items             OrderItem[]
+  events            OrderEvent[]
+  historicalOrder   HistoricalOrder?
+
+  @@index([chatId, status])
+  @@index([createdAt])
+  @@index([status])
+}
+
+model OrderItem {
+  id                String          @id @default(cuid())
+  orderId           String
+  productSnapshotId String
+  addedByUserId     String?
+  quantity          Decimal         @db.Decimal(10, 2)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  order             Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productSnapshot   ProductSnapshot @relation(fields: [productSnapshotId], references: [id], onDelete: Restrict)
+  addedByUser       User?           @relation("OrderItemAddedByUser", fields: [addedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@unique([orderId, productSnapshotId])
+}
+
+model OrderEvent {
+  id          String   @id @default(cuid())
+  orderId     String
+  actorUserId String?
+  type        String   @db.VarChar(100)
+  payload     Json?
+  createdAt   DateTime @default(now())
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  actorUser   User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([orderId, createdAt])
+  @@index([type, createdAt])
+}
+
+model ProductSnapshot {
+  id                   String                @id @default(cuid())
+  externalProductId    Int?
+  xmlId                Int?
+  slug                 String?               @db.VarChar(255)
+  name                 String                @db.VarChar(255)
+  description          String?               @db.Text
+  priceCurrent         Decimal?              @db.Decimal(10, 2)
+  priceOld             Decimal?              @db.Decimal(10, 2)
+  currency             String?               @db.VarChar(10)
+  unit                 String?               @db.VarChar(20)
+  weightValue          Decimal?              @db.Decimal(10, 3)
+  weightUnit           String?               @db.VarChar(20)
+  ratingAverage        Decimal?              @db.Decimal(4, 2)
+  ratingCount          Int?
+  productUrl           String?               @db.VarChar(2048)
+  payload              Json?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  orderItems           OrderItem[]
+  historicalOrderItems HistoricalOrderItem[]
+
+  @@index([createdAt])
+  @@index([externalProductId])
+  @@index([xmlId])
+}
+
+model HistoricalOrder {
+  id                String                @id @default(cuid())
+  source            HistoricalOrderSource
+  dedupeKey         String                @unique
+  chatId            String?
+  originalOrderId   String?               @unique
+  finalizedByUserId String?
+  importJobId       String?
+  shareBasketUrl    String?               @db.VarChar(2048)
+  itemCount         Int                   @default(0)
+  finalizedAt       DateTime?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  chat              TelegramChat?         @relation(fields: [chatId], references: [id], onDelete: SetNull)
+  originalOrder     Order?                @relation(fields: [originalOrderId], references: [id], onDelete: SetNull)
+  finalizedByUser   User?                 @relation("HistoricalOrderFinalizedByUser", fields: [finalizedByUserId], references: [id], onDelete: SetNull)
+  importJob         ImportJob?            @relation(fields: [importJobId], references: [id], onDelete: SetNull)
+  items             HistoricalOrderItem[]
+
+  @@index([createdAt])
+  @@index([source, finalizedAt])
+}
+
+model HistoricalOrderItem {
+  id                String          @id @default(cuid())
+  historicalOrderId String
+  productSnapshotId String
+  quantity          Decimal         @db.Decimal(10, 2)
+  createdAt         DateTime        @default(now())
+  historicalOrder   HistoricalOrder @relation(fields: [historicalOrderId], references: [id], onDelete: Cascade)
+  productSnapshot   ProductSnapshot @relation(fields: [productSnapshotId], references: [id], onDelete: Restrict)
+
+  @@unique([historicalOrderId, productSnapshotId])
+}
+
+model ImportJob {
+  id               String            @id @default(cuid())
+  status           ImportJobStatus   @default(CREATED)
+  sourceFile       String            @db.VarChar(2048)
+  checksum         String?           @db.VarChar(255)
+  totalRows        Int               @default(0)
+  validRows        Int               @default(0)
+  importedRows     Int               @default(0)
+  skippedRows      Int               @default(0)
+  errorRows        Int               @default(0)
+  startedAt        DateTime?
+  finishedAt       DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  rows             ImportJobRow[]
+  historicalOrders HistoricalOrder[]
+
+  @@index([createdAt])
+  @@index([status, createdAt])
+}
+
+model ImportJobRow {
+  id             String             @id @default(cuid())
+  importJobId    String
+  rowNumber      Int
+  status         ImportJobRowStatus @default(PENDING)
+  dedupeKey      String?            @db.VarChar(255)
+  errorCode      String?            @db.VarChar(100)
+  errorMessage   String?            @db.Text
+  payload        Json?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  importJob      ImportJob          @relation(fields: [importJobId], references: [id], onDelete: Cascade)
+
+  @@unique([importJobId, rowNumber])
+  @@index([status, createdAt])
+}
+
+model IntegrationLog {
+  id             String   @id @default(cuid())
+  provider       String   @db.VarChar(100)
+  operation      String   @db.VarChar(100)
+  status         String   @db.VarChar(50)
+  correlationId  String?  @db.VarChar(255)
+  requestPayload Json?
+  responsePayload Json?
+  errorMessage   String?  @db.Text
+  createdAt      DateTime @default(now())
+
+  @@index([provider, operation, createdAt])
+}

@@ -1,0 +1,8 @@
+node_modules
+dist
+.env
+.env.local
+.railway
+.DS_Store
+coverage
+prisma/dev.db
