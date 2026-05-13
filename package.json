@@ -11,6 +11,7 @@
     "build": "tsc -p tsconfig.json",
     "dev": "tsx watch src/server.ts",
     "format": "biome check --write .",
+    "import:csv": "node --import tsx src/cli/import-orders.ts",
     "lint": "biome check .",
     "start": "node dist/server.js",
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
