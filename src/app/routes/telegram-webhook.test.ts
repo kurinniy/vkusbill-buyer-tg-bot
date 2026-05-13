@@ -62,6 +62,67 @@ test('POST /telegram/webhook handles /new_order and responds via Telegram client
   await app.close();
 });
 
+test('POST /telegram/webhook handles /start', async () => {
+  const { app, telegramClient } = await buildTestApp();
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/telegram/webhook',
+    headers: {
+      'x-telegram-bot-api-secret-token': 'test-secret',
+    },
+    payload: {
+      update_id: 1001,
+      message: {
+        message_id: 1001,
+        text: '/start',
+        chat: {
+          id: 101,
+          type: 'group',
+          title: 'Test Group',
+        },
+      },
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.match(telegramClient.messages[0]?.text ?? '', /Бот помогает собирать общую корзину/);
+  assert.match(telegramClient.messages[0]?.text ?? '', /\/help/);
+
+  await app.close();
+});
+
+test('POST /telegram/webhook handles /help', async () => {
+  const { app, telegramClient } = await buildTestApp();
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/telegram/webhook',
+    headers: {
+      'x-telegram-bot-api-secret-token': 'test-secret',
+    },
+    payload: {
+      update_id: 1002,
+      message: {
+        message_id: 1002,
+        text: '/help',
+        chat: {
+          id: 101,
+          type: 'group',
+          title: 'Test Group',
+        },
+      },
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.match(telegramClient.messages[0]?.text ?? '', /Доступные команды:/);
+  assert.match(telegramClient.messages[0]?.text ?? '', /\/finalize/);
+  assert.match(telegramClient.messages[0]?.text ?? '', /\/history/);
+
+  await app.close();
+});
+
 test('POST /telegram/webhook handles /cart for empty cart', async () => {
   const { app, telegramClient } = await buildTestApp();
 

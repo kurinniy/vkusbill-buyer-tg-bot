@@ -55,6 +55,12 @@ export class TelegramCommandHandler {
     }
 
     switch (command.name) {
+      case '/start':
+        await this.handleStart(message);
+        return;
+      case '/help':
+        await this.handleHelp(message);
+        return;
       case '/new_order':
         await this.handleNewOrder(message);
         return;
@@ -82,6 +88,36 @@ export class TelegramCommandHandler {
       default:
         return;
     }
+  }
+
+  private async handleStart(message: TelegramMessage): Promise<void> {
+    await this.telegramClient.sendMessage(
+      message.chat.id,
+      [
+        'Бот помогает собирать общую корзину ВкусВилл в группе.',
+        'Основной сценарий: /new_order -> /search -> /add -> /cart -> /finalize.',
+        'Полный список команд: /help.',
+      ].join('\n'),
+    );
+  }
+
+  private async handleHelp(message: TelegramMessage): Promise<void> {
+    await this.telegramClient.sendMessage(
+      message.chat.id,
+      [
+        'Доступные команды:',
+        '/start — краткое описание бота',
+        '/help — список команд',
+        '/new_order — создать новую корзину',
+        '/search <запрос> — найти товар',
+        '/add <номер> [количество] — добавить товар из последнего поиска',
+        '/cart — показать текущую корзину',
+        '/remove <номер> — удалить позицию из корзины',
+        '/finalize — получить share_basket ссылку',
+        '/cancel — отменить активную корзину',
+        '/history — показать последние заказы группы',
+      ].join('\n'),
+    );
   }
 
   private async handleNewOrder(message: TelegramMessage): Promise<void> {
@@ -353,10 +389,12 @@ function parseTelegramCommand(text: string): {
     | '/cancel'
     | '/cart'
     | '/finalize'
+    | '/help'
     | '/history'
     | '/new_order'
     | '/remove'
-    | '/search';
+    | '/search'
+    | '/start';
 } | null {
   const match = text.trim().match(/^\/([a-z_]+)(?:@[a-z0-9_]+)?(?:\s+(.*))?$/i);
 
@@ -368,6 +406,8 @@ function parseTelegramCommand(text: string): {
   const args = match[2]?.trim() ?? '';
 
   if (
+    command === '/start' ||
+    command === '/help' ||
     command === '/new_order' ||
     command === '/cart' ||
     command === '/history' ||
