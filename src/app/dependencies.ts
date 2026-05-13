@@ -1,5 +1,6 @@
 import { env } from '../config/env.js';
-import { PrismaOrderStore } from '../db/repositories/index.js';
+import { PrismaHistoryStore, PrismaOrderStore } from '../db/repositories/index.js';
+import { HistoryService } from '../domain/history/index.js';
 import { OrderService } from '../domain/orders/index.js';
 import {
   VkusvillMcpClient,
@@ -30,9 +31,11 @@ export interface AppDependencies {
 
 export function createAppDependencies(): AppDependencies {
   const orderStore = new PrismaOrderStore();
+  const historyStore = new PrismaHistoryStore();
   const vkusvillTransport = createVkusvillMcpHttpTransport();
   const vkusvillClient =
     vkusvillTransport == null ? null : new VkusvillMcpClient(vkusvillTransport);
+  const historyService = new HistoryService(historyStore);
   const orderService = new OrderService(
     orderStore,
     vkusvillClient ?? new UnconfiguredVkusvillCartClient(),
@@ -47,6 +50,7 @@ export function createAppDependencies(): AppDependencies {
     ? {
         telegramCommandHandler: new TelegramCommandHandler(
           orderService,
+          historyService,
           productSearchService,
           telegramClient,
         ),
@@ -54,6 +58,7 @@ export function createAppDependencies(): AppDependencies {
     : {
         telegramCommandHandler: new TelegramCommandHandler(
           orderService,
+          historyService,
           productSearchService,
           telegramClient,
         ),

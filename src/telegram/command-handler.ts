@@ -1,3 +1,4 @@
+import type { HistoryService } from '../domain/history/index.js';
 import {
   ActiveOrderNotFoundError,
   EmptyOrderFinalizeError,
@@ -20,11 +21,14 @@ export interface ProductSearchService {
   }>;
 }
 
+type SupportedHistoryService = Pick<HistoryService, 'getRecentOrders'>;
+
 export class TelegramCommandHandler {
   private readonly lastSearchResultsByChat = new Map<number, ProductSearchResultItem[]>();
 
   public constructor(
     private readonly orderService: SupportedOrderService,
+    private readonly historyService: SupportedHistoryService,
     private readonly productSearchService: ProductSearchService,
     private readonly telegramClient: TelegramClient,
   ) {}
@@ -56,6 +60,9 @@ export class TelegramCommandHandler {
         return;
       case '/cart':
         await this.handleCart(message);
+        return;
+      case '/history':
+        await this.handleHistory(message);
         return;
       case '/cancel':
         await this.handleCancel(message);
@@ -108,6 +115,17 @@ export class TelegramCommandHandler {
     }
 
     await this.telegramClient.sendMessage(message.chat.id, formatCart(order));
+  }
+
+  private async handleHistory(message: TelegramMessage): Promise<void> {
+    const history = await this.historyService.getRecentOrders(message.chat.id, 5);
+
+    if (history.length === 0) {
+      await this.telegramClient.sendMessage(message.chat.id, 'История заказов пока пуста.');
+      return;
+    }
+
+    await this.telegramClient.sendMessage(message.chat.id, formatHistory(history));
   }
 
   private async handleCancel(message: TelegramMessage): Promise<void> {
@@ -330,7 +348,15 @@ export class TelegramCommandHandler {
 
 function parseTelegramCommand(text: string): {
   args: string;
-  name: '/add' | '/cancel' | '/cart' | '/finalize' | '/new_order' | '/remove' | '/search';
+  name:
+    | '/add'
+    | '/cancel'
+    | '/cart'
+    | '/finalize'
+    | '/history'
+    | '/new_order'
+    | '/remove'
+    | '/search';
 } | null {
   const match = text.trim().match(/^\/([a-z_]+)(?:@[a-z0-9_]+)?(?:\s+(.*))?$/i);
 
@@ -344,6 +370,7 @@ function parseTelegramCommand(text: string): {
   if (
     command === '/new_order' ||
     command === '/cart' ||
+    command === '/history' ||
     command === '/cancel' ||
     command === '/finalize' ||
     command === '/search' ||
@@ -405,4 +432,27 @@ function formatCart(order: OrderView): string {
   );
 
   return ['Текущая корзина:', ...lines].join('\n');
+}
+
+function formatHistory(
+  history: Awaited<ReturnType<SupportedHistoryService['getRecentOrders']>>,
+): string {
+  const lines = history.flatMap((order, index) => {
+    const finalizedAt =
+      order.finalizedAt == null
+        ? 'дата неизвестна'
+        : order.finalizedAt.toISOString().slice(0, 16).replace('T', ' ');
+    const summary = `${index + 1}. ${finalizedAt} — ${order.itemCount} поз.`;
+    const meta = [
+      order.finalizedBy == null ? null : `автор ${order.finalizedBy}`,
+      order.shareBasketUrl == null ? null : `ссылка ${order.shareBasketUrl}`,
+    ]
+      .filter((part) => part != null)
+      .join(' — ');
+    const items = order.items.map((item) => `   ${item.name} x ${item.quantity}`);
+
+    return meta.length === 0 ? [summary, ...items] : [`${summary} — ${meta}`, ...items];
+  });
+
+  return ['Последние заказы:', ...lines].join('\n');
 }

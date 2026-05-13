@@ -3,6 +3,8 @@ import test from 'node:test';
 
 import Fastify from 'fastify';
 
+import { HistoryService } from '../../domain/history/index.js';
+import type { HistoricalOrderView, HistoryStore } from '../../domain/history/index.js';
 import { OrderService } from '../../domain/orders/index.js';
 import type {
   CancelDraftOrderParams,
@@ -522,6 +524,115 @@ test('POST /telegram/webhook handles /remove using cart item number', async () =
   await app.close();
 });
 
+test('POST /telegram/webhook shows recent order history', async () => {
+  const { app, telegramClient } = await buildTestApp();
+
+  await app.inject({
+    method: 'POST',
+    url: '/telegram/webhook',
+    headers: {
+      'x-telegram-bot-api-secret-token': 'test-secret',
+    },
+    payload: {
+      update_id: 18,
+      message: {
+        message_id: 18,
+        text: '/search бананы',
+        chat: {
+          id: 101,
+          type: 'group',
+          title: 'Test Group',
+        },
+        from: {
+          id: 77,
+          username: 'tester',
+          first_name: 'Test',
+        },
+      },
+    },
+  });
+
+  await app.inject({
+    method: 'POST',
+    url: '/telegram/webhook',
+    headers: {
+      'x-telegram-bot-api-secret-token': 'test-secret',
+    },
+    payload: {
+      update_id: 19,
+      message: {
+        message_id: 19,
+        text: '/add 1 2',
+        chat: {
+          id: 101,
+          type: 'group',
+          title: 'Test Group',
+        },
+        from: {
+          id: 77,
+          username: 'tester',
+          first_name: 'Test',
+        },
+      },
+    },
+  });
+
+  await app.inject({
+    method: 'POST',
+    url: '/telegram/webhook',
+    headers: {
+      'x-telegram-bot-api-secret-token': 'test-secret',
+    },
+    payload: {
+      update_id: 20,
+      message: {
+        message_id: 20,
+        text: '/finalize',
+        chat: {
+          id: 101,
+          type: 'group',
+          title: 'Test Group',
+        },
+        from: {
+          id: 77,
+          username: 'tester',
+          first_name: 'Test',
+        },
+      },
+    },
+  });
+
+  const historyResponse = await app.inject({
+    method: 'POST',
+    url: '/telegram/webhook',
+    headers: {
+      'x-telegram-bot-api-secret-token': 'test-secret',
+    },
+    payload: {
+      update_id: 21,
+      message: {
+        message_id: 21,
+        text: '/history',
+        chat: {
+          id: 101,
+          type: 'group',
+          title: 'Test Group',
+        },
+      },
+    },
+  });
+
+  assert.equal(historyResponse.statusCode, 200);
+  assert.match(telegramClient.messages[3]?.text ?? '', /Последние заказы:/);
+  assert.match(telegramClient.messages[3]?.text ?? '', /Бананы x 2/);
+  assert.match(
+    telegramClient.messages[3]?.text ?? '',
+    /https:\/\/vkusvill\.ru\/\?share_basket=test/,
+  );
+
+  await app.close();
+});
+
 test('POST /telegram/webhook rejects wrong secret', async () => {
   const { app, telegramClient } = await buildTestApp();
 
@@ -544,17 +655,20 @@ test('POST /telegram/webhook rejects wrong secret', async () => {
 
 async function buildTestApp() {
   const app = Fastify({ logger: false });
-  const orderService = new OrderService(new InMemoryOrderStore(), {
+  const store = new InMemoryOrderStore();
+  const orderService = new OrderService(store, {
     async createCartLink() {
       return {
         link: 'https://vkusvill.ru/?share_basket=test',
       };
     },
   });
+  const historyService = new HistoryService(store);
   const telegramClient = new FakeTelegramClient();
   const dependencies: AppDependencies = {
     telegramCommandHandler: new TelegramCommandHandler(
       orderService,
+      historyService,
       new FakeProductSearchService(),
       telegramClient,
     ),
@@ -598,8 +712,9 @@ class FakeProductSearchService {
   }
 }
 
-class InMemoryOrderStore implements OrderStore {
+class InMemoryOrderStore implements OrderStore, HistoryStore {
   private order: OrderView | null = null;
+  private history: HistoricalOrderView[] = [];
 
   public async getDraftByTelegramChatId(telegramChatId: number): Promise<OrderView | null> {
     if (this.order?.telegramChatId === telegramChatId && this.order.status === 'DRAFT') {
@@ -684,6 +799,18 @@ class InMemoryOrderStore implements OrderStore {
     order.status = 'FINALIZED';
     order.shareBasketUrl = params.shareBasketUrl;
     order.finalizedAt = new Date();
+    this.history.unshift({
+      id: `history-${order.id}`,
+      source: 'TELEGRAM',
+      shareBasketUrl: params.shareBasketUrl,
+      itemCount: order.items.length,
+      finalizedAt: order.finalizedAt,
+      finalizedBy: params.actor?.username == null ? null : `@${params.actor.username}`,
+      items: order.items.map((item) => ({
+        name: item.productSnapshot.name,
+        quantity: item.quantity,
+      })),
+    });
     return structuredClone(order);
   }
 
@@ -692,6 +819,10 @@ class InMemoryOrderStore implements OrderStore {
     order.status = 'CANCELLED';
     order.cancelledAt = new Date();
     return structuredClone(order);
+  }
+
+  public async getRecentByTelegramChatId(): Promise<HistoricalOrderView[]> {
+    return structuredClone(this.history);
   }
 
   private requireDraft(orderId: string): OrderView {
