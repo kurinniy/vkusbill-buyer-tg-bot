@@ -2,6 +2,10 @@ import { env } from '../config/env.js';
 import { PrismaOrderStore } from '../db/repositories/index.js';
 import { OrderService } from '../domain/orders/index.js';
 import {
+  VkusvillMcpClient,
+  createVkusvillMcpHttpTransport,
+} from '../integrations/vkusvill-mcp/index.js';
+import {
   DisabledTelegramClient,
   TelegramCommandHandler,
   TelegramHttpClient,
@@ -26,24 +30,31 @@ export interface AppDependencies {
 
 export function createAppDependencies(): AppDependencies {
   const orderStore = new PrismaOrderStore();
-  const orderService = new OrderService(orderStore, new UnconfiguredVkusvillCartClient());
+  const vkusvillTransport = createVkusvillMcpHttpTransport();
+  const vkusvillClient =
+    vkusvillTransport == null ? null : new VkusvillMcpClient(vkusvillTransport);
+  const orderService = new OrderService(
+    orderStore,
+    vkusvillClient ?? new UnconfiguredVkusvillCartClient(),
+  );
   const telegramClient =
     env.TELEGRAM_BOT_TOKEN == null
       ? new DisabledTelegramClient()
       : new TelegramHttpClient(env.TELEGRAM_BOT_TOKEN);
+  const productSearchService = vkusvillClient ?? new UnconfiguredProductSearchService();
 
   return env.TELEGRAM_WEBHOOK_SECRET == null
     ? {
         telegramCommandHandler: new TelegramCommandHandler(
           orderService,
-          new UnconfiguredProductSearchService(),
+          productSearchService,
           telegramClient,
         ),
       }
     : {
         telegramCommandHandler: new TelegramCommandHandler(
           orderService,
-          new UnconfiguredProductSearchService(),
+          productSearchService,
           telegramClient,
         ),
         telegramWebhookSecret: env.TELEGRAM_WEBHOOK_SECRET,
