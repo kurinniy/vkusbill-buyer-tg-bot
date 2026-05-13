@@ -13,6 +13,12 @@ class UnconfiguredVkusvillCartClient {
   }
 }
 
+class UnconfiguredProductSearchService {
+  public async searchProducts(): Promise<{ items: [] }> {
+    throw new Error('Vkusvill product search client is not configured yet.');
+  }
+}
+
 export interface AppDependencies {
   telegramCommandHandler: TelegramCommandHandler;
   telegramWebhookSecret?: string;
@@ -28,10 +34,18 @@ export function createAppDependencies(): AppDependencies {
 
   return env.TELEGRAM_WEBHOOK_SECRET == null
     ? {
-        telegramCommandHandler: new TelegramCommandHandler(orderService, telegramClient),
+        telegramCommandHandler: new TelegramCommandHandler(
+          orderService,
+          new UnconfiguredProductSearchService(),
+          telegramClient,
+        ),
       }
     : {
-        telegramCommandHandler: new TelegramCommandHandler(orderService, telegramClient),
+        telegramCommandHandler: new TelegramCommandHandler(
+          orderService,
+          new UnconfiguredProductSearchService(),
+          telegramClient,
+        ),
         telegramWebhookSecret: env.TELEGRAM_WEBHOOK_SECRET,
       };
 }

@@ -13,6 +13,7 @@ import type {
   UpsertDraftItemParams,
 } from '../../domain/orders/index.js';
 import type { OrderActor, OrderView, TelegramChatRef } from '../../domain/orders/index.js';
+import type { ProductSearchResultItem } from '../../integrations/vkusvill-mcp/index.js';
 import { type TelegramClient, TelegramCommandHandler } from '../../telegram/index.js';
 import type { AppDependencies } from '../dependencies.js';
 import { registerTelegramWebhookRoute } from './telegram-webhook.js';
@@ -104,6 +105,92 @@ test('POST /telegram/webhook handles /cart for empty cart', async () => {
   await app.close();
 });
 
+test('POST /telegram/webhook handles /search and /add using last search results', async () => {
+  const { app, telegramClient } = await buildTestApp();
+
+  const searchResponse = await app.inject({
+    method: 'POST',
+    url: '/telegram/webhook',
+    headers: {
+      'x-telegram-bot-api-secret-token': 'test-secret',
+    },
+    payload: {
+      update_id: 3,
+      message: {
+        message_id: 3,
+        text: '/search бананы',
+        chat: {
+          id: 101,
+          type: 'group',
+          title: 'Test Group',
+        },
+        from: {
+          id: 77,
+          username: 'tester',
+          first_name: 'Test',
+        },
+      },
+    },
+  });
+
+  assert.equal(searchResponse.statusCode, 200);
+  assert.match(telegramClient.messages[0]?.text ?? '', /Результаты поиска:/);
+  assert.match(telegramClient.messages[0]?.text ?? '', /1\. Бананы — 168 ₽/);
+
+  const addResponse = await app.inject({
+    method: 'POST',
+    url: '/telegram/webhook',
+    headers: {
+      'x-telegram-bot-api-secret-token': 'test-secret',
+    },
+    payload: {
+      update_id: 4,
+      message: {
+        message_id: 4,
+        text: '/add 1 2',
+        chat: {
+          id: 101,
+          type: 'group',
+          title: 'Test Group',
+        },
+        from: {
+          id: 77,
+          username: 'tester',
+          first_name: 'Test',
+        },
+      },
+    },
+  });
+
+  assert.equal(addResponse.statusCode, 200);
+  assert.equal(telegramClient.messages[1]?.text, 'Добавил в корзину: Бананы x 2.');
+
+  const cartResponse = await app.inject({
+    method: 'POST',
+    url: '/telegram/webhook',
+    headers: {
+      'x-telegram-bot-api-secret-token': 'test-secret',
+    },
+    payload: {
+      update_id: 5,
+      message: {
+        message_id: 5,
+        text: '/cart',
+        chat: {
+          id: 101,
+          type: 'group',
+          title: 'Test Group',
+        },
+      },
+    },
+  });
+
+  assert.equal(cartResponse.statusCode, 200);
+  assert.equal(telegramClient.messages[2]?.text, 'Текущая корзина:\n1. Бананы x 2');
+
+  await app.close();
+});
+
 test('POST /telegram/webhook rejects wrong secret', async () => {
   const { app, telegramClient } = await buildTestApp();
 
@@ -135,7 +222,11 @@ async function buildTestApp() {
   });
   const telegramClient = new FakeTelegramClient();
   const dependencies: AppDependencies = {
-    telegramCommandHandler: new TelegramCommandHandler(orderService, telegramClient),
+    telegramCommandHandler: new TelegramCommandHandler(
+      orderService,
+      new FakeProductSearchService(),
+      telegramClient,
+    ),
     telegramWebhookSecret: 'test-secret',
   };
 
@@ -149,6 +240,30 @@ class FakeTelegramClient implements TelegramClient {
 
   public async sendMessage(chatId: number, text: string): Promise<void> {
     this.messages.push({ chatId, text });
+  }
+}
+
+class FakeProductSearchService {
+  public async searchProducts(): Promise<{ items: ProductSearchResultItem[] }> {
+    return {
+      items: [
+        {
+          id: 731,
+          xmlId: 731,
+          name: 'Бананы',
+          description: 'Фрукт',
+          priceCurrent: 168,
+          priceOld: null,
+          currency: 'RUB',
+          unit: 'кг',
+          weightValue: null,
+          weightUnit: null,
+          ratingAverage: 4.9,
+          ratingCount: 100,
+          url: 'https://vkusvill.ru/goods/banany-731.html',
+        },
+      ],
+    };
   }
 }
 
